@@ -722,11 +722,15 @@
     return '<div class="card">' +
       '<div class="center emoji">🎮</div>' +
       '<h2 class="center">Resgatar meu jogo</h2>' +
-      '<p class="desc center">Para começar, confirme os dados da sua compra.</p>' +
+      '<p class="desc center">Preencha para resgatar o seu jogo.</p>' +
       (p.error ? '<div class="alert error">'+esc(p.error)+'</div>' : '') +
       '<form id="step1Form">' +
-        '<label>Nome completo de quem comprou no Mercado Livre</label><input type="text" id="s1Nome" required value="'+esc(p.nomeComprador)+'">' +
-        '<label>Seu telefone (para contato, caso precise de ajuda)</label><input type="tel" id="s1Tel" required placeholder="(11) 99999-9999" value="'+esc(p.telefone)+'">' +
+        '<label style="color:var(--danger);">Nome completo de quem comprou no Mercado Livre</label>' +
+        '<p class="muted" style="margin:-4px 0 6px;font-size:12px;">(Nome de quem comprou, não o nome que está na entrega)</p>' +
+        '<input type="text" id="s1Nome" required value="'+esc(p.nomeComprador)+'">' +
+        '<label>Informe o telefone de quem vai jogar ou do responsável</label>' +
+        '<p class="muted" style="margin:-4px 0 6px;font-size:12px;">(Pode ser qualquer telefone, não precisa ser o que está no Mercado Livre)</p>' +
+        '<input type="tel" id="s1Tel" required placeholder="(11) 99999-9999" value="'+esc(p.telefone)+'">' +
         '<button class="btn" type="submit">Continuar</button>' +
       '</form>' +
     '</div>';
@@ -736,8 +740,7 @@
     var p = state.public;
     return '<div class="card">' +
       '<div class="center emoji">📦</div>' +
-      '<h2 class="center">Confirme o CEP de entrega</h2>' +
-      '<p class="desc center">Digite o CEP para onde o produto foi enviado, como verificação de segurança.</p>' +
+      '<h2 class="center">Digite o CEP da entrega do videogame</h2>' +
       (p.error ? '<div class="alert error">'+esc(p.error)+'</div>' : '') +
       '<form id="step2Form">' +
         '<label>CEP de entrega</label><input type="text" id="s2Cep" required placeholder="00000-000">' +
@@ -807,7 +810,8 @@
 
     return '<div class="card">' +
       '<div class="center emoji">✅</div>' +
-      '<h2 class="center">Aqui está o seu acesso do jogo escolhido</h2>' +
+      '<h2 class="center">'+(p.jaResgatadoAntes ? 'Você já resgatou esse jogo e o acesso está aí abaixo' : 'Aqui está o acesso do jogo escolhido')+'</h2>' +
+      '<p class="center" style="font-weight:800;font-size:16px;margin-top:-6px;">'+esc(game?game.nome:'')+'</p>' +
       '<div class="cred-box">' +
         '<div class="cred-row"><span>E-mail</span><span>'+esc(account.email)+'</span></div>' +
         '<div class="cred-row"><span>Senha</span><span>'+esc(account.senha)+'</span></div>' +
@@ -1095,6 +1099,7 @@
           state.public.clientId = jaResgatado.id;
           state.public.resultAccountId = jaResgatado.accountId;
           state.public.error = null;
+          state.public.jaResgatadoAntes = true;
           state.public.step = 4;
           return render();
         }
@@ -1289,6 +1294,7 @@
             state.public.step = 4;
             state.public.error = null;
             state.public.confirmGameId = null;
+            state.public.jaResgatadoAntes = false;
             render();
           });
         });
