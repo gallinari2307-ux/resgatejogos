@@ -239,6 +239,8 @@
     confirm: null, // {kind, id, step, label} — modal de confirmação em duas etapas
     importMsg: null,
     expandedGames: {}, // { [gameId]: true } — quais jogos estão com a lista de acessos aberta
+    expandedAccounts: {}, // { [accountId]: true } — quais acessos têm código/senha visíveis
+    editingAccount: null, // id do acesso sendo editado no momento
     public: { step:1, nomeComprador:'', telefone:'', cep:'', clientId:null, resultAccountId:null, error:null, lockInfo:null }
   };
 
@@ -269,6 +271,9 @@
     ],
     'reset-account': [
       {title:'Tornar este acesso disponível de novo?', text:'Esse acesso vai voltar para o estoque como disponível (livre). Use isso se houve algum erro na entrega. Tem certeza?'}
+    ],
+    'mark-used': [
+      {title:'Marcar este acesso como usado?', text:'Esse acesso vai sair do estoque disponível e ficar marcado como usado, sem vincular a nenhum cliente. Tem certeza?'}
     ]
   };
 
@@ -294,7 +299,7 @@
       '<div class="app-header">' +
         '<div class="lockup">' +
           '<div class="badge-logo">🎮</div>' +
-          '<div><h1>Resgate Rápido</h1><p>Estoque de jogos &amp; resgate do cliente</p></div>' +
+          '<div><h1>Shopping dos Presentes Oficial</h1><p>A sua maior loja de consoles e jogos dentro do Mercado Livre</p></div>' +
         '</div>' +
         '<div class="switcher">' +
           '<button data-nav="public" class="' + (state.view==='public'?'active':'') + '">Visão do cliente</button>' +
@@ -434,14 +439,22 @@
 
       if (open){
         if (accs.length > 0){
-          html += '<div class="table-wrap" style="margin-top:16px;"><table><tr><th>E-mail</th><th>Código verif.</th><th>Fornecedor</th><th>Status</th><th>Enviado</th><th>Cliente</th><th></th></tr>';
+          html += '<div class="table-wrap" style="margin-top:16px;"><table><tr><th>E-mail</th><th>Fornecedor</th><th>Status</th><th>Enviado</th><th>Cliente</th><th></th></tr>';
           accs.forEach(function(a){
-            html += '<tr><td>'+esc(a.email)+'</td><td>'+(a.codigoVerificacao?esc(a.codigoVerificacao):'-')+'</td><td>'+esc(a.fornecedor)+'</td>' +
+            var accOpen = !!state.expandedAccounts[a.id];
+            html += '<tr>' +
+              '<td><button class="game-row" style="padding:0;" data-action="toggle-account" data-id="'+a.id+'"><span class="chevron'+(accOpen?' open':'')+'" style="font-size:11px;">▶</span> '+esc(a.email)+'</button></td>' +
+              '<td>'+esc(a.fornecedor)+'</td>' +
               '<td><span class="pill '+a.status+'">'+a.status+'</span></td>' +
               '<td>'+sentDot(a)+'</td>' +
               '<td>'+(a.clienteNome? esc(a.clienteNome)+(a.clienteTelefone?' · '+esc(a.clienteTelefone):''):'-')+'</td>' +
-              '<td>'+(a.status==='livre' ? '<button class="btn danger small" data-action="delete-account" data-id="'+a.id+'">Remover</button>' : '<button class="btn secondary small" data-action="reset-account" data-id="'+a.id+'">Tornar disponível</button>')+'</td>' +
+              '<td>'+(a.status==='livre' ?
+                ('<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn secondary small" data-action="mark-used" data-id="'+a.id+'">Tornar usado</button><button class="btn danger small" data-action="delete-account" data-id="'+a.id+'">Remover</button></div>')
+                : '<button class="btn secondary small" data-action="reset-account" data-id="'+a.id+'">Tornar disponível</button>')+'</td>' +
               '</tr>';
+            if (accOpen){
+              html += '<tr><td colspan="6" style="background:var(--surface-2);">' + renderAccountDetail(a) + '</td></tr>';
+            }
           });
           html += '</table></div>';
         } else {
@@ -452,6 +465,30 @@
     });
 
     return html;
+  }
+
+  function renderAccountDetail(a){
+    if (state.editingAccount === a.id){
+      return '<form id="editAccountForm" data-id="'+a.id+'" style="padding:10px 4px;">' +
+        '<div class="field-row">' +
+          '<div><label>E-mail</label><input type="text" id="eaEmail" value="'+esc(a.email)+'" required></div>' +
+          '<div><label>Senha</label><input type="text" id="eaSenha" value="'+esc(a.senha)+'" required></div>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<div><label>Código de verificação</label><input type="text" id="eaCodigo" value="'+esc(a.codigoVerificacao||'')+'"></div>' +
+          '<div><label>Fornecedor</label><input type="text" id="eaFornecedor" value="'+esc(a.fornecedor)+'" required></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button class="btn small" type="submit">Salvar</button>' +
+          '<button class="btn ghost small" type="button" data-action="cancel-edit-account">Cancelar</button>' +
+        '</div>' +
+      '</form>';
+    }
+    return '<div style="padding:6px 4px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;">' +
+      '<span><strong>Senha:</strong> '+esc(a.senha)+'</span>' +
+      '<span><strong>Código de verificação:</strong> '+(a.codigoVerificacao?esc(a.codigoVerificacao):'—')+'</span>' +
+      '<button class="btn secondary small" data-action="edit-account" data-id="'+a.id+'">Editar</button>' +
+    '</div>';
   }
 
   function renderConfig(){
@@ -613,6 +650,13 @@
     return '<a class="btn wa" href="https://wa.me/'+numero+'?text='+msg+'" target="_blank">Falar no WhatsApp</a>';
   }
 
+  // Botão que abre o WhatsApp SEM número fixo, com a mensagem pronta,
+  // para o cliente escolher para quem enviar (ex: para ele mesmo, "Mensagens comigo").
+  function selfWaButton(text, label){
+    var msg = encodeURIComponent(text);
+    return '<a class="btn wa" href="https://wa.me/?text='+msg+'" target="_blank">'+esc(label)+'</a>';
+  }
+
   function renderLocked(a){
     var until = new Date(a.lockedUntil);
     return '<div class="public-wrap"><div class="card center">' +
@@ -705,22 +749,28 @@
     var lojaNome = (state.config && state.config.lojaNome) || 'nossa loja';
     var videoUrl = state.config && state.config.videoUrl;
 
+    var selfMsg = 'Meu acesso do jogo ' + (game?game.nome:'') + ':\n' +
+      'E-mail: ' + account.email + '\n' +
+      'Senha: ' + account.senha + '\n' +
+      'Código de verificação: ' + (account.codigoVerificacao || '—') +
+      (videoUrl ? ('\nVídeo de instruções: ' + videoUrl) : '');
+
     return '<div class="card">' +
       '<div class="center emoji">✅</div>' +
-      '<h2 class="center">Aqui está o seu acesso para acessar o seu jogo escolhido</h2>' +
-      '<p class="desc center">Tire um print para não perder o acesso. Caso perca, entre de novo neste mesmo link que você conseguirá fazer login novamente e ver o acesso que já foi enviado.</p>' +
+      '<h2 class="center">Aqui está o seu acesso do jogo escolhido</h2>' +
       '<div class="cred-box">' +
         '<div class="cred-row"><span>E-mail</span><span>'+esc(account.email)+'</span></div>' +
         '<div class="cred-row"><span>Senha</span><span>'+esc(account.senha)+'</span></div>' +
         '<div class="cred-row"><span>Código de verificação</span><span>'+(account.codigoVerificacao?esc(account.codigoVerificacao):'—')+'</span></div>' +
       '</div>' +
+      selfWaButton(selfMsg, '📲 Clique aqui para receber o acesso também no seu WhatsApp') +
       (videoUrl ?
-        ('<p class="center" style="margin-top:6px;color:var(--danger);font-weight:800;font-size:16px;">Clique neste link do YouTube para ver o passo a passo de como usar o seu jogo.</p>' +
-         '<a class="btn secondary" href="'+esc(videoUrl)+'" target="_blank">▶ Ver vídeo no YouTube</a>')
+        ('<p class="center" style="margin-top:20px;margin-bottom:6px;font-weight:700;">Clique na caixa do tutorial do YouTube para ver o passo a passo completo de acesso.</p>' +
+         '<a class="btn danger" style="display:block;text-align:center;font-size:16px;font-weight:800;" href="'+esc(videoUrl)+'" target="_blank">▶ Tutorial no YouTube</a>')
         : '') +
-      '<p class="center" style="margin-top:18px;color:var(--danger);font-weight:700;">Não conseguiu resgatar ou deu algum erro? Nos envie no WhatsApp que você obteve o link para resgatar o jogo. Em breve te atenderemos.</p>' +
+      '<p class="center" style="margin-top:20px;color:var(--danger);font-weight:800;font-size:17px;text-decoration:underline;">Pode dar erro no código de verificação. Caso dê erro, nos chame lá no WhatsApp.</p>' +
       waButton('Olá! Resgatei o jogo '+(game?game.nome:'')+' mas estou com problema para acessar.') +
-      '<button class="btn ghost small" data-action="reset-public" style="margin-top:14px;width:100%;">Simular novo resgate</button>' +
+      '<button class="btn ghost small" data-action="reset-public" style="margin-top:14px;width:100%;">Resgatar mais um jogo</button>' +
     '</div>';
   }
 
@@ -761,6 +811,9 @@
     if (acc && acc.status==='livre') return db.collection('accounts').doc(accountId).delete();
     return Promise.resolve();
   }
+  function editAccount(accountId, data){
+    return db.collection('accounts').doc(accountId).update(data);
+  }
   function addClient(nomeComprador, cep, allowedGameIds){
     return db.collection('clients').add({
       nomeComprador: nomeComprador, cep: cep, allowedGameIds: allowedGameIds,
@@ -794,6 +847,13 @@
       }));
     }
     return Promise.all(ops);
+  }
+  function markAccountUsed(accountId){
+    var acc = state.accounts.find(function(a){return a.id===accountId;});
+    if (!acc || acc.status!=='livre') return Promise.resolve();
+    return db.collection('accounts').doc(accountId).update({
+      status:'usado', clienteNome:null, clienteTelefone:null, usadoEm: new Date().toISOString(), dataAproximada:false
+    });
   }
   function importSeedData(){
     if (!window.SEED_GAMES || !window.SEED_ACCOUNTS) return Promise.reject(new Error('sem dados de importação'));
@@ -875,6 +935,25 @@
         return addAccount(gameId, accEmail, accSenha, accCodigo, accFornecedor);
       }).then(function(){
         state.msg = {type:'success', text: (existing ? 'Acesso adicionado a ' : 'Jogo criado e acesso adicionado: ') + gNome + '.'};
+        render();
+      });
+      return;
+    }
+
+    if (form.id === 'editAccountForm'){
+      e.preventDefault();
+      var editId = form.getAttribute('data-id');
+      var eaEmail = document.getElementById('eaEmail').value.trim();
+      var eaSenha = document.getElementById('eaSenha').value.trim();
+      var eaCodigo = document.getElementById('eaCodigo').value.trim();
+      var eaFornecedor = document.getElementById('eaFornecedor').value.trim();
+      if (!eaEmail || !eaSenha || !eaFornecedor){
+        state.msg = {type:'error', text:'Preencha e-mail, senha e fornecedor.'};
+        return render();
+      }
+      editAccount(editId, { email: eaEmail, senha: eaSenha, codigoVerificacao: eaCodigo, fornecedor: eaFornecedor }).then(function(){
+        state.editingAccount = null;
+        state.msg = {type:'success', text:'Acesso atualizado.'};
         render();
       });
       return;
@@ -1057,6 +1136,9 @@
       if (c.kind === 'reset-account'){
         return resetAccount(c.id).then(function(){ state.msg={type:'success',text:'Acesso liberado novamente.'}; render(); });
       }
+      if (c.kind === 'mark-used'){
+        return markAccountUsed(c.id).then(function(){ state.msg={type:'success',text:'Acesso marcado como usado.'}; render(); });
+      }
       return;
     }
 
@@ -1072,6 +1154,18 @@
       }
       if (action === 'toggle-game'){
         state.expandedGames[id] = !state.expandedGames[id];
+        return render();
+      }
+      if (action === 'toggle-account'){
+        state.expandedAccounts[id] = !state.expandedAccounts[id];
+        return render();
+      }
+      if (action === 'edit-account'){
+        state.editingAccount = id;
+        return render();
+      }
+      if (action === 'cancel-edit-account'){
+        state.editingAccount = null;
         return render();
       }
       if (action === 'delete-game'){
@@ -1139,6 +1233,10 @@
       }
       if (action === 'reset-account'){
         state.confirm = { kind:'reset-account', id:id, step:0 };
+        return render();
+      }
+      if (action === 'mark-used'){
+        state.confirm = { kind:'mark-used', id:id, step:0 };
         return render();
       }
     }
