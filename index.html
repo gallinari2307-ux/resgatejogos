@@ -266,6 +266,9 @@
     'reset-all': [
       {title:'Resetar todos os dados?', text:'Isso vai apagar TODOS os jogos, contas e clientes de teste. Tem certeza?'},
       {title:'Confirmar reset', text:'Confirma mesmo que quer apagar tudo? Essa ação não pode ser desfeita.'}
+    ],
+    'reset-account': [
+      {title:'Tornar este acesso disponível de novo?', text:'Esse acesso vai voltar para o estoque como disponível (livre). Use isso se houve algum erro na entrega. Tem certeza?'}
     ]
   };
 
@@ -437,7 +440,7 @@
               '<td><span class="pill '+a.status+'">'+a.status+'</span></td>' +
               '<td>'+sentDot(a)+'</td>' +
               '<td>'+(a.clienteNome? esc(a.clienteNome)+(a.clienteTelefone?' · '+esc(a.clienteTelefone):''):'-')+'</td>' +
-              '<td>'+(a.status==='livre' ? '<button class="btn danger small" data-action="delete-account" data-id="'+a.id+'">Remover</button>' : '')+'</td>' +
+              '<td>'+(a.status==='livre' ? '<button class="btn danger small" data-action="delete-account" data-id="'+a.id+'">Remover</button>' : '<button class="btn secondary small" data-action="reset-account" data-id="'+a.id+'">Tornar disponível</button>')+'</td>' +
               '</tr>';
           });
           html += '</table></div>';
@@ -462,6 +465,8 @@
         '<input type="text" id="cfgVideo" placeholder="https://youtube.com/..." value="'+esc(state.config && state.config.videoUrl || '')+'">' +
         '<label>Nome da loja (aparece na mensagem de suporte)</label>' +
         '<input type="text" id="cfgLoja" placeholder="Ex: Shopping dos Presentes" value="'+esc(state.config && state.config.lojaNome || '')+'">' +
+        '<label>Número de WhatsApp da loja (com DDI e DDD, só números)</label>' +
+        '<input type="text" id="cfgWhats" placeholder="Ex: 5511999999999" value="'+esc(state.config && state.config.whatsapp || '')+'">' +
         '<button class="btn" type="submit">Salvar</button>' +
       '</form>' +
     '</div>';
@@ -604,7 +609,8 @@
 
   function waButton(text){
     var msg = encodeURIComponent(text || 'Olá! Preciso de ajuda para resgatar meu jogo.');
-    return '<a class="btn wa" href="https://wa.me/?text='+msg+'" target="_blank">Falar no WhatsApp</a>';
+    var numero = (state.config && state.config.whatsapp) ? state.config.whatsapp : '';
+    return '<a class="btn wa" href="https://wa.me/'+numero+'?text='+msg+'" target="_blank">Falar no WhatsApp</a>';
   }
 
   function renderLocked(a){
@@ -657,6 +663,21 @@
       return {id:g.id, nome:g.nome, livres:l};
     });
 
+    // tela de confirmação antes de resgatar de verdade
+    if (p.confirmGameId){
+      var gConfirm = games.find(function(g){ return g.id === p.confirmGameId; });
+      if (!gConfirm) { p.confirmGameId = null; }
+      else {
+        return '<div class="card">' +
+          '<div class="center emoji">⚠️</div>' +
+          '<h2 class="center">Confirmar resgate</h2>' +
+          '<p class="desc center">Você deseja confirmar que vai resgatar o jogo <strong>'+esc(gConfirm.nome)+'</strong>? Depois de confirmar, você não poderá trocar.</p>' +
+          '<button class="btn" data-action="confirm-assign" data-id="'+gConfirm.id+'">Confirmar</button>' +
+          '<button class="btn ghost small" data-action="cancel-confirm" style="margin-top:10px;width:100%;">Voltar e escolher outro jogo</button>' +
+        '</div>';
+      }
+    }
+
     var html = '<div class="card">' +
       '<div class="center emoji">🎁</div>' +
       '<h2 class="center">Escolha seu jogo</h2>' +
@@ -667,7 +688,7 @@
       html += '<p class="muted">Nenhum jogo liberado para este cadastro. Fale com quem te vendeu.</p>';
     } else {
       games.forEach(function(g){
-        html += '<button class="game-pick" data-action="pick-game" data-id="'+g.id+'" '+(g.livres===0?'disabled':'')+'>' +
+        html += '<button class="game-pick" data-action="ask-confirm-game" data-id="'+g.id+'" '+(g.livres===0?'disabled':'')+'>' +
           '<span>'+esc(g.nome)+'</span>' + (g.livres===0 ? '<span class="pill pendente">indisponível</span>' : '<span class="pill livre">disponível</span>') +
         '</button>';
       });
@@ -687,16 +708,17 @@
     return '<div class="card">' +
       '<div class="center emoji">✅</div>' +
       '<h2 class="center">Aqui está o seu acesso para acessar o seu jogo escolhido</h2>' +
+      '<p class="desc center">Tire um print para não perder o acesso. Caso perca, entre de novo neste mesmo link que você conseguirá fazer login novamente e ver o acesso que já foi enviado.</p>' +
       '<div class="cred-box">' +
         '<div class="cred-row"><span>E-mail</span><span>'+esc(account.email)+'</span></div>' +
         '<div class="cred-row"><span>Senha</span><span>'+esc(account.senha)+'</span></div>' +
         '<div class="cred-row"><span>Código de verificação</span><span>'+(account.codigoVerificacao?esc(account.codigoVerificacao):'—')+'</span></div>' +
       '</div>' +
       (videoUrl ?
-        ('<p class="desc center" style="margin-top:6px;">Clique neste link do YouTube para ver o passo a passo de como usar o seu jogo.</p>' +
+        ('<p class="center" style="margin-top:6px;color:var(--danger);font-weight:800;font-size:16px;">Clique neste link do YouTube para ver o passo a passo de como usar o seu jogo.</p>' +
          '<a class="btn secondary" href="'+esc(videoUrl)+'" target="_blank">▶ Ver vídeo no YouTube</a>')
         : '') +
-      '<p class="desc center" style="margin-top:18px;">Teve algum problema? Não conseguiu acessar? Volte na conversa que você nos chamou pelo QR Code no nosso suporte da loja '+esc(lojaNome)+', que em breve te ajudaremos.</p>' +
+      '<p class="center" style="margin-top:18px;color:var(--danger);font-weight:700;">Não conseguiu resgatar ou deu algum erro? Nos envie no WhatsApp que você obteve o link para resgatar o jogo. Em breve te atenderemos.</p>' +
       waButton('Olá! Resgatei o jogo '+(game?game.nome:'')+' mas estou com problema para acessar.') +
       '<button class="btn ghost small" data-action="reset-public" style="margin-top:14px;width:100%;">Simular novo resgate</button>' +
     '</div>';
@@ -711,8 +733,8 @@
     var alvo = (nome||'').trim().toLowerCase();
     return state.games.find(function(g){ return g.nome.trim().toLowerCase() === alvo; }) || null;
   }
-  function setConfig(videoUrl, lojaNome){
-    return db.doc('config/app').set({ videoUrl: videoUrl || '', lojaNome: lojaNome || '' });
+  function setConfig(videoUrl, lojaNome, whatsapp){
+    return db.doc('config/app').set({ videoUrl: videoUrl || '', lojaNome: lojaNome || '', whatsapp: whatsapp || '' });
   }
   function deleteGame(gameId){
     var batchDeletes = [];
@@ -757,6 +779,21 @@
     return db.collection('accounts').doc(account.id).update({
       status:'usado', clienteNome: clienteNome, clienteTelefone: clienteTelefone, usadoEm: new Date().toISOString(), dataAproximada: false
     }).then(function(){ return account; });
+  }
+  function resetAccount(accountId){
+    var acc = state.accounts.find(function(a){return a.id===accountId;});
+    if (!acc || acc.status!=='usado') return Promise.resolve();
+    var ops = [];
+    ops.push(db.collection('accounts').doc(accountId).update({
+      status:'livre', clienteNome:null, clienteTelefone:null, usadoEm:null, dataAproximada:false
+    }));
+    var client = state.clients.find(function(c){ return c.accountId===accountId && c.status==='resgatado'; });
+    if (client){
+      ops.push(db.collection('clients').doc(client.id).update({
+        status:'pendente', resgatadoEm:null, gameIdResgatado:null, accountId:null
+      }));
+    }
+    return Promise.all(ops);
   }
   function importSeedData(){
     if (!window.SEED_GAMES || !window.SEED_ACCOUNTS) return Promise.reject(new Error('sem dados de importação'));
@@ -847,7 +884,8 @@
       e.preventDefault();
       var videoUrl = document.getElementById('cfgVideo').value.trim();
       var lojaNome = document.getElementById('cfgLoja').value.trim();
-      setConfig(videoUrl, lojaNome).then(function(){
+      var whatsapp = document.getElementById('cfgWhats').value.trim().replace(/\D/g,'');
+      setConfig(videoUrl, lojaNome, whatsapp).then(function(){
         state.configMsg = {type:'success', text:'Configuração salva.'};
         render();
       });
@@ -919,6 +957,17 @@
         return c.status==='pendente' && normNome(c.nomeComprador)===nomeAlvo && normCep(c.cep)===cepAlvo;
       });
       if (!client){
+        var jaResgatado = state.clients.find(function(c){
+          return c.status==='resgatado' && normNome(c.nomeComprador)===nomeAlvo && normCep(c.cep)===cepAlvo;
+        });
+        if (jaResgatado){
+          registerSuccess();
+          state.public.clientId = jaResgatado.id;
+          state.public.resultAccountId = jaResgatado.accountId;
+          state.public.error = null;
+          state.public.step = 4;
+          return render();
+        }
         var st = registerFailure();
         if (isLocked(st)) return render();
         var restantes = MAX_TENT - st.count;
@@ -1005,6 +1054,9 @@
       if (c.kind === 'reset-all'){
         return resetAllData().then(function(){ state.msg={type:'success',text:'Dados resetados.'}; render(); });
       }
+      if (c.kind === 'reset-account'){
+        return resetAccount(c.id).then(function(){ state.msg={type:'success',text:'Acesso liberado novamente.'}; render(); });
+      }
       return;
     }
 
@@ -1061,20 +1113,33 @@
         state.public = { step:1, nomeComprador:'', telefone:'', cep:'', clientId:null, resultAccountId:null, error:null };
         return render();
       }
-      if (action === 'pick-game'){
+      if (action === 'ask-confirm-game'){
+        state.public.confirmGameId = id;
+        return render();
+      }
+      if (action === 'cancel-confirm'){
+        state.public.confirmGameId = null;
+        return render();
+      }
+      if (action === 'confirm-assign'){
         var client3 = state.clients.find(function(c){ return c.id === state.public.clientId; });
         if (!client3) return;
         assignAccount(id, client3.nomeComprador, client3.telefoneCliente).then(function(account){
-          if (!account){ state.public.error = 'Esse jogo ficou sem estoque agora. Escolha outro ou fale conosco.'; return render(); }
+          if (!account){ state.public.error = 'Esse jogo ficou sem estoque agora. Escolha outro ou fale conosco.'; state.public.confirmGameId = null; return render(); }
           db.collection('clients').doc(client3.id).update({
             status:'resgatado', resgatadoEm: new Date().toISOString(), gameIdResgatado: id, accountId: account.id
           }).then(function(){
             state.public.resultAccountId = account.id;
             state.public.step = 4;
             state.public.error = null;
+            state.public.confirmGameId = null;
             render();
           });
         });
+      }
+      if (action === 'reset-account'){
+        state.confirm = { kind:'reset-account', id:id, step:0 };
+        return render();
       }
     }
   });
