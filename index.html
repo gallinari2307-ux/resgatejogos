@@ -566,6 +566,7 @@
         '<label>Nome completo de quem comprou (Mercado Livre)</label><input type="text" id="cNome" required>' +
         '<label>CEP da entrega</label><input type="text" id="cCep" required placeholder="00000-000">' +
         '<label>Jogos que ele tem direito a escolher</label>' +
+        (state.games.length>0 ? '<label class="item" style="display:inline-flex;margin-bottom:8px;"><input type="checkbox" id="ckAllGames"> <strong>Marcar todos</strong></label>' : '') +
         '<div class="grid-checks">' +
           state.games.map(function(g){ return '<label class="item"><input type="checkbox" value="'+g.id+'" class="ck-game"> '+esc(g.nome)+'</label>'; }).join('') +
         '</div>' +
@@ -644,10 +645,10 @@
     return html;
   }
 
-  function waButton(text){
+  function waButton(text, label){
     var msg = encodeURIComponent(text || 'Olá! Preciso de ajuda para resgatar meu jogo.');
     var numero = (state.config && state.config.whatsapp) ? state.config.whatsapp : '';
-    return '<a class="btn wa" href="https://wa.me/'+numero+'?text='+msg+'" target="_blank">Falar no WhatsApp</a>';
+    return '<a class="btn wa" href="https://wa.me/'+numero+'?text='+msg+'" target="_blank">'+esc(label || 'Falar no WhatsApp')+'</a>';
   }
 
   // Botão que abre o WhatsApp SEM número fixo, com a mensagem pronta,
@@ -655,6 +656,55 @@
   function selfWaButton(text, label){
     var msg = encodeURIComponent(text);
     return '<a class="btn wa" href="https://wa.me/?text='+msg+'" target="_blank">'+esc(label)+'</a>';
+  }
+
+  // Gera uma imagem (PNG) com os dados do acesso e baixa no dispositivo do cliente.
+  function downloadAccessImage(accountId){
+    var account = state.accounts.find(function(a){ return a.id === accountId; });
+    if (!account) return;
+    var game = state.games.find(function(g){ return g.id === account.gameId; });
+    var lojaNome = (state.config && state.config.lojaNome) || 'Shopping dos Presentes Oficial';
+
+    var lines = [
+      { text: lojaNome, size: 22, weight: 'bold', color: '#1b1f27', gap: 46 },
+      { text: 'Acesso: ' + (game ? game.nome : ''), size: 18, weight: 'bold', color: '#1b1f27', gap: 40 },
+      { text: 'E-mail', size: 13, weight: 'normal', color: '#6b7280', gap: 20 },
+      { text: account.email, size: 17, weight: 'bold', color: '#111827', gap: 34 },
+      { text: 'Senha', size: 13, weight: 'normal', color: '#6b7280', gap: 20 },
+      { text: account.senha, size: 17, weight: 'bold', color: '#111827', gap: 34 },
+      { text: 'Código de verificação', size: 13, weight: 'normal', color: '#6b7280', gap: 20 },
+      { text: account.codigoVerificacao || '—', size: 17, weight: 'bold', color: '#111827', gap: 34 }
+    ];
+
+    var width = 640;
+    var paddingTop = 40, paddingSide = 32, paddingBottom = 34;
+    var height = paddingTop + paddingBottom;
+    lines.forEach(function(l){ height += l.gap; });
+
+    var canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    var ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, width-2, height-2);
+
+    var y = paddingTop;
+    lines.forEach(function(l){
+      ctx.fillStyle = l.color;
+      ctx.font = l.weight + ' ' + l.size + 'px Arial, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText(l.text, paddingSide, y);
+      y += l.gap;
+    });
+
+    var link = document.createElement('a');
+    link.download = 'acesso-' + (game ? game.nome.toLowerCase().replace(/[^a-z0-9]+/g,'-') : 'jogo') + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
   }
 
   function renderLocked(a){
@@ -763,13 +813,14 @@
         '<div class="cred-row"><span>Senha</span><span>'+esc(account.senha)+'</span></div>' +
         '<div class="cred-row"><span>Código de verificação</span><span>'+(account.codigoVerificacao?esc(account.codigoVerificacao):'—')+'</span></div>' +
       '</div>' +
-      selfWaButton(selfMsg, '📲 Clique aqui para receber o acesso também no seu WhatsApp') +
+      selfWaButton(selfMsg, '📲 Clique aqui e envie para alguém da família guardar este acesso') +
+      '<button type="button" class="btn secondary" style="margin-top:10px;width:100%;" data-action="download-access-image" data-id="'+account.id+'">🖼️ Baixar imagem do acesso</button>' +
       (videoUrl ?
         ('<p class="center" style="margin-top:20px;margin-bottom:6px;font-weight:700;">Clique na caixa do tutorial do YouTube para ver o passo a passo completo de acesso.</p>' +
          '<a class="btn danger" style="display:block;text-align:center;font-size:16px;font-weight:800;" href="'+esc(videoUrl)+'" target="_blank">▶ Tutorial no YouTube</a>')
         : '') +
-      '<p class="center" style="margin-top:20px;color:var(--danger);font-weight:800;font-size:17px;text-decoration:underline;">Pode dar erro no código de verificação. Caso dê erro, nos chame lá no WhatsApp.</p>' +
-      waButton('Olá! Resgatei o jogo '+(game?game.nome:'')+' mas estou com problema para acessar.') +
+      '<p class="center" style="margin-top:20px;color:#7c3aed;font-weight:800;font-size:19px;text-decoration:underline;">Deu algum erro no acesso da conta? Clique no nosso botão do WhatsApp e fale conosco.</p>' +
+      waButton('Olá! Resgatei o jogo '+(game?game.nome:'')+' mas estou com problema para acessar.', 'Nosso WhatsApp') +
       '<button class="btn ghost small" data-action="reset-public" style="margin-top:14px;width:100%;">Resgatar mais um jogo</button>' +
     '</div>';
   }
@@ -1079,6 +1130,13 @@
     }
   });
 
+  document.addEventListener('change', function(e){
+    if (e.target && e.target.id === 'ckAllGames'){
+      var checked = e.target.checked;
+      Array.prototype.slice.call(document.querySelectorAll('.ck-game')).forEach(function(cb){ cb.checked = checked; });
+    }
+  });
+
   document.addEventListener('mousedown', function(e){
     var sugg = e.target.closest('[data-suggest-name]');
     if (sugg){
@@ -1206,6 +1264,10 @@
       if (action === 'reset-public'){
         state.public = { step:1, nomeComprador:'', telefone:'', cep:'', clientId:null, resultAccountId:null, error:null };
         return render();
+      }
+      if (action === 'download-access-image'){
+        downloadAccessImage(id);
+        return;
       }
       if (action === 'ask-confirm-game'){
         state.public.confirmGameId = id;
