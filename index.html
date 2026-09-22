@@ -198,25 +198,6 @@
     return html;
   }
 
-  var MAX_TENT = 4;
-  var BLOQUEIO_MS = 3*60*60*1000;
-
-  function getAttempts(){
-    try { return JSON.parse(localStorage.getItem('rr_attempts')||'{}'); } catch(e){ return {}; }
-  }
-  function setAttempts(v){
-    try { localStorage.setItem('rr_attempts', JSON.stringify(v)); } catch(e){}
-  }
-  function isLocked(a){ return a.lockedUntil && new Date(a.lockedUntil).getTime() > Date.now(); }
-  function registerFailure(){
-    var a = getAttempts();
-    a.count = (a.count||0)+1;
-    if (a.count >= MAX_TENT){ a.lockedUntil = new Date(Date.now()+BLOQUEIO_MS).toISOString(); a.count = 0; }
-    setAttempts(a);
-    return a;
-  }
-  function registerSuccess(){ setAttempts({count:0, lockedUntil:null}); }
-
   // ---------------- state ----------------
   var state = {
     ready: false,
@@ -379,6 +360,22 @@
       html += '<tr><td>'+esc(g.nome)+'</td><td>'+(g.livres===0?'<span class="pill pendente">0 — sem estoque</span>':g.livres)+'</td></tr>';
     });
     html += '</table></div></div>';
+
+    var entregas = state.accounts.filter(function(a){ return a.status==='usado' && a.usadoEm; })
+      .sort(function(a,b){ return new Date(b.usadoEm) - new Date(a.usadoEm); });
+
+    html += '<div class="card"><h2>Histórico de entregas</h2><div class="table-wrap"><table><tr><th>Cliente</th><th>Jogo</th><th>Data</th><th>Hora</th></tr>';
+    if (entregas.length===0){
+      html += '<tr><td colspan="4" class="muted">Nenhuma entrega registrada ainda.</td></tr>';
+    } else {
+      entregas.forEach(function(a){
+        var g = state.games.find(function(gg){ return gg.id===a.gameId; });
+        var dt = new Date(a.usadoEm);
+        html += '<tr><td>'+(a.clienteNome?esc(a.clienteNome):'-')+'</td><td>'+(g?esc(g.nome):'-')+'</td>' +
+          '<td>'+esc(dt.toLocaleDateString('pt-BR'))+'</td><td>'+esc(dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}))+'</td></tr>';
+      });
+    }
+    html += '</table></div></div>';
     return html;
   }
   function stat(num,label){ return '<div class="stat"><div class="num">'+num+'</div><div class="label">'+label+'</div></div>'; }
@@ -484,10 +481,18 @@
         '</div>' +
       '</form>';
     }
+    var extra = '';
+    if (a.status === 'usado'){
+      extra = '<div style="width:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:18px;">' +
+        '<span><strong>CEP:</strong> '+(a.clienteCep?esc(a.clienteCep):'—')+'</span>' +
+        '<span><strong>Nº da venda:</strong> '+(a.clienteNumeroVenda?esc(a.clienteNumeroVenda):'—')+'</span>' +
+      '</div>';
+    }
     return '<div style="padding:6px 4px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;">' +
       '<span><strong>Senha:</strong> '+esc(a.senha)+'</span>' +
       '<span><strong>Código de verificação:</strong> '+(a.codigoVerificacao?esc(a.codigoVerificacao):'—')+'</span>' +
       '<button class="btn secondary small" data-action="edit-account" data-id="'+a.id+'">Editar</button>' +
+      extra +
     '</div>';
   }
 
@@ -565,6 +570,7 @@
       '<form id="addClientForm">' +
         '<label>Nome completo de quem comprou (Mercado Livre)</label><input type="text" id="cNome" required>' +
         '<label>CEP da entrega</label><input type="text" id="cCep" required placeholder="00000-000">' +
+        '<label>Número da venda no Mercado Livre</label><input type="text" id="cNumeroVenda" placeholder="Opcional, só para nossa base">' +
         '<label>Jogos que ele tem direito a escolher</label>' +
         (state.games.length>0 ? '<label class="item" style="display:inline-flex;margin-bottom:8px;"><input type="checkbox" id="ckAllGames"> <strong>Marcar todos</strong></label>' : '') +
         '<div class="grid-checks">' +
@@ -582,11 +588,11 @@
       }).join('') +
     '</div>';
 
-    html += '<div class="card"><div class="table-wrap"><table><tr><th>Comprador</th><th>CEP</th><th>Jogos liberados</th><th>Status</th><th>Telefone</th><th></th></tr>';
-    if (list.length===0) html += '<tr><td colspan="6" class="muted">Nenhum cliente nesta lista.</td></tr>';
+    html += '<div class="card"><div class="table-wrap"><table><tr><th>Comprador</th><th>CEP</th><th>Nº da venda</th><th>Jogos liberados</th><th>Status</th><th>Telefone</th><th></th></tr>';
+    if (list.length===0) html += '<tr><td colspan="7" class="muted">Nenhum cliente nesta lista.</td></tr>';
     list.forEach(function(c){
       var gameNames = (c.allowedGameIds||[]).map(function(id){ var g=state.games.find(function(gg){return gg.id===id;}); return g?g.nome:null; }).filter(Boolean).join(', ') || '-';
-      html += '<tr><td>'+esc(c.nomeComprador)+'</td><td>'+esc(c.cep)+'</td><td>'+esc(gameNames)+'</td>' +
+      html += '<tr><td>'+esc(c.nomeComprador)+'</td><td>'+esc(c.cep)+'</td><td>'+(c.numeroVenda?esc(c.numeroVenda):'-')+'</td><td>'+esc(gameNames)+'</td>' +
         '<td><span class="pill '+c.status+'">'+c.status+'</span></td>' +
         '<td>'+(c.telefoneCliente?esc(c.telefoneCliente):'-')+'</td>' +
         '<td>'+(c.status==='pendente'?'<button class="btn danger small" data-action="delete-client" data-id="'+c.id+'">Remover</button>':'')+'</td>' +
@@ -599,7 +605,15 @@
   function renderManual(){
     var html = '';
     if (state.manualError) html += '<div class="alert error">'+esc(state.manualError)+'</div>';
-    if (state.manualSuccess) html += '<div class="alert success">'+esc(state.manualSuccess)+'</div>';
+    if (state.manualSuccess){
+      var ms = state.manualSuccess;
+      html += '<div class="alert success"><strong>Acesso liberado'+(ms.gameNome?(' — '+esc(ms.gameNome)):'')+'</strong></div>' +
+        '<div class="cred-box" style="margin-bottom:16px;">' +
+          '<div class="cred-row"><span>E-mail</span><span>'+esc(ms.email)+'</span></div>' +
+          '<div class="cred-row"><span>Senha</span><span>'+esc(ms.senha)+'</span></div>' +
+          '<div class="cred-row"><span>Código de verificação</span><span>'+(ms.codigoVerificacao?esc(ms.codigoVerificacao):'—')+'</span></div>' +
+        '</div>';
+    }
 
     var pendentes = state.clients.filter(function(c){return c.status==='pendente';});
 
@@ -630,9 +644,6 @@
 
   function renderPublic(){
     var p = state.public;
-    var attempts = getAttempts();
-    if (isLocked(attempts)) return renderLocked(attempts);
-
     var html = '<div class="public-wrap">';
     html += '<div class="steps">' + [1,2,3,4].map(function(n){ return '<div class="dot '+(p.step>=n?'on':'')+'"></div>'; }).join('') + '</div>';
 
@@ -705,16 +716,6 @@
     link.download = 'acesso-' + (game ? game.nome.toLowerCase().replace(/[^a-z0-9]+/g,'-') : 'jogo') + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
-  }
-
-  function renderLocked(a){
-    var until = new Date(a.lockedUntil);
-    return '<div class="public-wrap"><div class="card center">' +
-      '<div class="emoji">🔒</div>' +
-      '<h2>Acesso temporariamente bloqueado</h2>' +
-      '<p class="desc">Muitas tentativas incorretas. Tente novamente após '+esc(until.toLocaleString('pt-BR'))+'.</p>' +
-      waButton('Olá! Meu acesso de resgate ficou bloqueado, pode me ajudar?') +
-      '</div></div>';
   }
 
   function renderStep1(){
@@ -869,9 +870,9 @@
   function editAccount(accountId, data){
     return db.collection('accounts').doc(accountId).update(data);
   }
-  function addClient(nomeComprador, cep, allowedGameIds){
+  function addClient(nomeComprador, cep, numeroVenda, allowedGameIds){
     return db.collection('clients').add({
-      nomeComprador: nomeComprador, cep: cep, allowedGameIds: allowedGameIds,
+      nomeComprador: nomeComprador, cep: cep, numeroVenda: numeroVenda || '', allowedGameIds: allowedGameIds,
       telefoneCliente: null, status: 'pendente', createdAt: new Date().toISOString(),
       resgatadoEm: null, gameIdResgatado: null, accountId: null
     });
@@ -881,11 +882,13 @@
     if (c && c.status==='pendente') return db.collection('clients').doc(clientId).delete();
     return Promise.resolve();
   }
-  function assignAccount(gameId, clienteNome, clienteTelefone){
+  function assignAccount(gameId, clienteNome, clienteTelefone, clienteCep, clienteNumeroVenda){
     var account = state.accounts.find(function(a){ return a.gameId===gameId && a.status==='livre'; });
     if (!account) return Promise.resolve(null);
     return db.collection('accounts').doc(account.id).update({
-      status:'usado', clienteNome: clienteNome, clienteTelefone: clienteTelefone, usadoEm: new Date().toISOString(), dataAproximada: false
+      status:'usado', clienteNome: clienteNome, clienteTelefone: clienteTelefone,
+      clienteCep: clienteCep || '', clienteNumeroVenda: clienteNumeroVenda || '',
+      usadoEm: new Date().toISOString(), dataAproximada: false
     }).then(function(){ return account; });
   }
   function resetAccount(accountId){
@@ -1030,9 +1033,10 @@
       e.preventDefault();
       var cNome = document.getElementById('cNome').value.trim();
       var cCep = document.getElementById('cCep').value.trim();
+      var cNumeroVenda = document.getElementById('cNumeroVenda').value.trim();
       var ids = Array.prototype.slice.call(document.querySelectorAll('.ck-game:checked')).map(function(el){return el.value;});
       if (!cNome || !cCep){ state.msg = {type:'error', text:'Preencha nome e CEP.'}; return render(); }
-      addClient(cNome, cCep, ids).then(function(){
+      addClient(cNome, cCep, cNumeroVenda, ids).then(function(){
         state.msg = {type:'success', text:'Cliente cadastrado.'};
         render();
       });
@@ -1046,7 +1050,8 @@
       var telM = document.getElementById('manTelefone').value.trim();
       var gameIdM = document.getElementById('manGame').value;
       if (!nomeM || !telM || !gameIdM){ state.manualError = 'Preencha todos os campos.'; state.manualSuccess=null; return render(); }
-      assignAccount(gameIdM, nomeM, telM).then(function(account){
+      var clientM = clientId ? state.clients.find(function(c){return c.id===clientId;}) : null;
+      assignAccount(gameIdM, nomeM, telM, clientM?clientM.cep:'', clientM?clientM.numeroVenda:'').then(function(account){
         if (!account){ state.manualError = 'Não há acessos livres para este jogo.'; state.manualSuccess=null; return render(); }
         var chain = Promise.resolve();
         if (clientId){
@@ -1058,7 +1063,12 @@
         chain.then(function(){
           var g = state.games.find(function(gg){return gg.id===gameIdM;});
           state.manualError = null;
-          state.manualSuccess = 'Acesso liberado: ' + account.email + ' / ' + account.senha + (g?(' ('+g.nome+')'):'');
+          state.manualSuccess = {
+            gameNome: g ? g.nome : '',
+            email: account.email,
+            senha: account.senha,
+            codigoVerificacao: account.codigoVerificacao || ''
+          };
           render();
         });
       });
@@ -1067,8 +1077,6 @@
 
     if (form.id === 'step1Form'){
       e.preventDefault();
-      var a1 = getAttempts();
-      if (isLocked(a1)) return render();
       var nome1 = document.getElementById('s1Nome').value.trim();
       var tel1 = document.getElementById('s1Tel').value.trim();
       if (!nome1 || !tel1){ state.public.error = 'Preencha todos os campos.'; return render(); }
@@ -1082,8 +1090,6 @@
 
     if (form.id === 'step2Form'){
       e.preventDefault();
-      var a2 = getAttempts();
-      if (isLocked(a2)) return render();
       var cep2 = document.getElementById('s2Cep').value;
       var nomeAlvo = normNome(state.public.nomeComprador);
       var cepAlvo = normCep(cep2);
@@ -1095,7 +1101,6 @@
           return c.status==='resgatado' && normNome(c.nomeComprador)===nomeAlvo && normCep(c.cep)===cepAlvo;
         });
         if (jaResgatado){
-          registerSuccess();
           state.public.clientId = jaResgatado.id;
           state.public.resultAccountId = jaResgatado.accountId;
           state.public.error = null;
@@ -1103,13 +1108,9 @@
           state.public.step = 4;
           return render();
         }
-        var st = registerFailure();
-        if (isLocked(st)) return render();
-        var restantes = MAX_TENT - st.count;
-        state.public.error = 'Dados não conferem. Você tem mais ' + restantes + ' tentativa(s) antes do bloqueio temporário.';
+        state.public.error = 'Dados não conferem. Confira o nome e o CEP e tente novamente.';
         return render();
       }
-      registerSuccess();
       db.collection('clients').doc(client.id).update({ telefoneCliente: state.public.telefone }).then(function(){
         state.public.clientId = client.id;
         state.public.error = null;
@@ -1285,7 +1286,7 @@
       if (action === 'confirm-assign'){
         var client3 = state.clients.find(function(c){ return c.id === state.public.clientId; });
         if (!client3) return;
-        assignAccount(id, client3.nomeComprador, client3.telefoneCliente).then(function(account){
+        assignAccount(id, client3.nomeComprador, client3.telefoneCliente, client3.cep, client3.numeroVenda).then(function(account){
           if (!account){ state.public.error = 'Esse jogo ficou sem estoque agora. Escolha outro ou fale conosco.'; state.public.confirmGameId = null; return render(); }
           db.collection('clients').doc(client3.id).update({
             status:'resgatado', resgatadoEm: new Date().toISOString(), gameIdResgatado: id, accountId: account.id
