@@ -694,39 +694,57 @@
       {width:10},{width:30},{width:16},{width:16},{width:18},{width:22},{width:16},{width:12},{width:14},{width:18}
     ];
 
-    function addTitleRow(text, argb){
+    var COR_DISPONIVEL = 'FF1F9D6C'; // verde
+    var COR_ENVIADO = 'FFEA6A12';    // laranja
+    var COR_TITULO = 'FF000000';     // preto
+
+    function addTitleRow(text){
       var row = ws.addRow([text]);
       ws.mergeCells(row.number, 1, row.number, NUM_COLS);
       var cell = row.getCell(1);
       cell.font = {bold:true, size:13, color:{argb:'FFFFFFFF'}};
-      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb: argb}};
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb: COR_TITULO}};
       cell.alignment = {vertical:'middle', horizontal:'left'};
+      cell.border = {top:{style:'medium',color:{argb:'FF000000'}}, bottom:{style:'medium',color:{argb:'FF000000'}}, left:{style:'medium',color:{argb:'FF000000'}}, right:{style:'medium',color:{argb:'FF000000'}}};
       row.height = 22;
       return row;
     }
-    function addSubHeaderRow(text){
+    // Faixa colorida e com caixa (borda) separando cada seção — verde para
+    // disponível, laranja para enviado, pra bater o olho e já saber o status.
+    function addSectionBanner(text, argb){
       var row = ws.addRow([text]);
       ws.mergeCells(row.number, 1, row.number, NUM_COLS);
       var cell = row.getCell(1);
-      cell.font = {bold:true, italic:true, color:{argb:'FF4A4FF2'}};
+      cell.font = {bold:true, size:11, color:{argb:'FFFFFFFF'}};
+      cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb: argb}};
       cell.alignment = {vertical:'middle', horizontal:'left'};
+      var thickBorder = {style:'medium', color:{argb:'FF000000'}};
+      cell.border = {top:thickBorder, bottom:thickBorder, left:thickBorder, right:thickBorder};
+      row.height = 20;
       return row;
     }
 
     // Cria uma Tabela nativa do Excel (com filtro e auto-formatação de linhas novas).
     var tableCount = 0;
-    function addNativeTable(rows, styleTheme){
+    function addNativeTable(rows, headerArgb){
       tableCount++;
+      var name = 'Tabela' + tableCount;
       var startRow = ws.lastRow ? ws.lastRow.number + 1 : 1;
       ws.addTable({
-        name: 'Tabela' + tableCount,
+        name: name,
         ref: 'A' + startRow,
         headerRow: true,
         totalsRow: false,
-        style: { theme: styleTheme, showRowStripes: true },
+        style: { theme: 'TableStyleLight1', showRowStripes: true },
         columns: COLS.map(function(c){ return {name:c}; }),
-        rows: rows.length ? rows : [['','','','','','','','','','']]
+        rows: rows.length ? rows : [[null,null,null,null,null,null,null,null,null,null]]
       });
+      // Recolore o cabeçalho da tabela pra combinar com a cor da seção (verde/laranja).
+      for (var c=1; c<=NUM_COLS; c++){
+        var hc = ws.getCell(startRow, c);
+        hc.fill = {type:'pattern', pattern:'solid', fgColor:{argb: headerArgb}};
+        hc.font = {bold:true, color:{argb:'FFFFFFFF'}};
+      }
       // Pinta a célula "Mês envio" de cada linha com a cor daquele mês (igual ao site).
       rows.forEach(function(r, i){
         var cell = ws.getCell(startRow + 1 + i, 1);
@@ -736,13 +754,13 @@
           cell.alignment = {horizontal:'center'};
         }
       });
-      return startRow + 1 + Math.max(rows.length,1) - 1; // última linha usada
+      return name;
     }
 
     var games = state.games.slice().sort(function(a,b){ return a.nome < b.nome ? -1 : 1; });
 
     if (games.length === 0){
-      addTitleRow('Nenhum jogo cadastrado ainda', 'FF666D92');
+      addTitleRow('Nenhum jogo cadastrado ainda');
     }
 
     games.forEach(function(g){
@@ -750,29 +768,36 @@
       var enviados = accs.filter(function(a){ return a.status === 'usado'; });
       var disponiveis = accs.filter(function(a){ return a.status === 'livre'; });
 
-      addTitleRow(g.nome + '  —  ' + disponiveis.length + ' disponível(is)  ·  ' + enviados.length + ' enviado(s)', 'FF4A4FF2');
+      var titleRow = addTitleRow(g.nome);
+      var titleCell = titleRow.getCell(1);
 
-      addSubHeaderRow('ENVIADOS');
+      addSectionBanner('✅ DISPONÍVEIS', COR_DISPONIVEL);
+      var disponiveisRows = disponiveis.map(function(a){
+        return [null, a.email || '', a.senha || '', a.codigoVerificacao || '', a.fornecedor || '', null, null, null, null, null];
+      });
+      var tableDisponiveis = addNativeTable(disponiveisRows, COR_DISPONIVEL);
+
+      ws.addRow([]);
+
+      addSectionBanner('📦 ENVIADOS', COR_ENVIADO);
       var enviadosRows = enviados.map(function(a){
         var dt = a.usadoEm ? new Date(a.usadoEm) : null;
         var ym = a.usadoEm ? monthKey(a.usadoEm) : null;
         var row = [
-          ym ? monthLabel(ym) : '', a.email || '', a.senha || '', a.codigoVerificacao || '', a.fornecedor || '',
+          ym ? monthLabel(ym) : null, a.email || '', a.senha || '', a.codigoVerificacao || '', a.fornecedor || '',
           a.clienteNome || '', a.clienteTelefone || '', a.clienteCep || '', a.clienteNumeroVenda || '',
-          dt ? (dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})) : ''
+          dt ? (dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})) : null
         ];
         row._ym = ym;
         return row;
       });
-      addNativeTable(enviadosRows, 'TableStyleMedium9');
+      var tableEnviados = addNativeTable(enviadosRows, COR_ENVIADO);
 
-      ws.addRow([]);
-
-      addSubHeaderRow('DISPONÍVEIS');
-      var disponiveisRows = disponiveis.map(function(a){
-        return ['', a.email || '', a.senha || '', a.codigoVerificacao || '', a.fornecedor || '', '', '', '', '', ''];
-      });
-      addNativeTable(disponiveisRows, 'TableStyleMedium4');
+      // Título do jogo com contagem automática — atualiza sozinho quando você
+      // adicionar ou remover linhas das tabelas, porque usa fórmula, não número fixo.
+      titleCell.value = {
+        formula: '"' + g.nome.replace(/"/g,'""') + '  —  "&COUNTA(' + tableDisponiveis + '[E-mail])&" disponível(is)  ·  "&COUNTA(' + tableEnviados + '[E-mail])&" enviado(s)"'
+      };
 
       ws.addRow([]);
       ws.addRow([]);
